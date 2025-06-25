@@ -178,7 +178,7 @@ function findConsecutiveSlots(
 
 /**
  * Sistematik olarak, çakışmaları ve zaman kısıtlamalarını dikkate alarak ders programını oluşturur.
- * Bu versiyon, dağıtım şekline göre blok ders yerleştirme yapar.
+ * Bu versiyon, dağıtım şekline göre blok ders yerleştirme yapar ve sınıf bazlı çalışır.
  */
 export function generateSystematicSchedule(
   mappings: SubjectTeacherMapping[],
@@ -189,7 +189,7 @@ export function generateSystematicSchedule(
 ): EnhancedGenerationResult {
   
   const startTime = Date.now();
-  console.log('🚀 Program oluşturma başlatıldı (v33 - Gelişmiş Blok Ders Yerleştirme)...');
+  console.log('🚀 Program oluşturma başlatıldı (v34 - Sınıf Bazlı Gelişmiş Blok Ders Yerleştirme)...');
 
   // --- Hazırlık Aşaması ---
   const classScheduleGrids: { [classId: string]: Schedule['schedule'] } = {};
@@ -203,6 +203,7 @@ export function generateSystematicSchedule(
 
   const selectedClassIds = new Set(mappings.map(m => m.classId));
 
+  // Sınıf programlarını ve sabit periyotları oluştur
   allClasses.forEach(c => {
     if (selectedClassIds.has(c.id)) {
       classScheduleGrids[c.id] = {};
@@ -213,12 +214,32 @@ export function generateSystematicSchedule(
     }
   });
   
-  mappings.forEach(m => {
-    if (!teacherAvailability.has(m.teacherId)) {
-      teacherAvailability.set(m.teacherId, new Set<string>());
+  // Öğretmen müsaitlik durumlarını başlat
+  allTeachers.forEach(t => {
+    if (mappings.some(m => m.teacherId === t.id)) {
+      teacherAvailability.set(t.id, new Set<string>());
+      
+      // Sabit periyotları öğretmen müsaitlik durumuna ekle
+      DAYS.forEach(day => {
+        // Hazırlık/Kahvaltı
+        teacherAvailability.get(t.id)!.add(`${day}-prep`);
+        
+        // Öğle yemeği
+        const lunchPeriod = (t.level === 'Ortaokul') ? '6' : '5';
+        teacherAvailability.get(t.id)!.add(`${day}-${lunchPeriod}`);
+        
+        // Ortaokul kahvaltı
+        if (t.level === 'Ortaokul') {
+          teacherAvailability.get(t.id)!.add(`${day}-breakfast`);
+        }
+        
+        // İkindi kahvaltısı
+        teacherAvailability.get(t.id)!.add(`${day}-afternoon-breakfast`);
+      });
     }
   });
   
+  // Kısıtlamaları haritaya ekle
   const constraintMap = new Map<string, string>();
   timeConstraints.forEach(c => {
     const key = `${c.entityType}-${c.entityId}-${c.day}-${c.period}`;
@@ -226,105 +247,6 @@ export function generateSystematicSchedule(
   });
 
   // --- Ders Yerleştirme Aşaması ---
-  // Önce dağıtım şekli olan dersleri yerleştir
-  const placedMappings = new Set<string>();
-  const unplacedMappings: SubjectTeacherMapping[] = [];
-  
-  // Dağıtım şekline göre sırala (daha karmaşık dağıtımlar önce)
-  const sortedMappings = [...mappings].sort((a, b) => {
-    const subjectA = allSubjects.find(s => s.id === a.subjectId);
-    const subjectB = allSubjects.find(s => s.id === b.subjectId);
-    
-    const hasDistributionA = !!subjectA?.distributionPattern;
-    const hasDistributionB = !!subjectB?.distributionPattern;
-    
-    // Dağıtım şekli olanlar önce
-    if (hasDistributionA && !hasDistributionB) return -1;
-    if (!hasDistributionA && hasDistributionB) return 1;
-    
-    // İkisinin de dağıtım şekli varsa, daha fazla blok içeren önce
-    if (hasDistributionA && hasDistributionB) {
-      const blocksA = parseDistributionPattern(subjectA!.distributionPattern!).length;
-      const blocksB = parseDistributionPattern(subjectB!.distributionPattern!).length;
-      if (blocksA !== blocksB) return blocksB - blocksA;
-    }
-    
-    // Son olarak, haftalık saati fazla olan önce
-    return b.weeklyHours - a.weeklyHours;
-  });
-  
-  console.log('📊 Yerleştirilecek dersler:');
-  sortedMappings.forEach(mapping => {
-    const subject = allSubjects.find(s => s.id === mapping.subjectId);
-    const classItem = allClasses.find(c => c.id === mapping.classId);
-    const teacher = allTeachers.find(t => t.id === mapping.teacherId);
-    
-    console.log(`- ${subject?.name} (${mapping.weeklyHours} saat) - ${classItem?.name} - ${teacher?.name} ${subject?.distributionPattern ? `[Dağıtım: ${subject.distributionPattern}]` : ''}`);
-  });
-  
-  // Her bir ders için
-  for (const mapping of sortedMappings) {
-    const subject = allSubjects.find(s => s.id === mapping.subjectId);
-    const classItem = allClasses.find(c => c.id === mapping.classId);
-    const teacher = allTeachers.find(t => t.id === mapping.teacherId);
-    
-    if (subject?.distributionPattern) {
-      // Dağıtım şekline göre yerleştir
-      const distributionBlocks = parseDistributionPattern(subject.distributionPattern);
-      
-      // Toplam saatlerin eşit olduğunu kontrol et
-      const totalHours = distributionBlocks.reduce((sum, hours) => sum + hours, 0);
-      if (totalHours !== mapping.weeklyHours) {
-        console.warn(`⚠️ Uyumsuz dağıtım şekli: ${subject.name} dersi için ${mapping.weeklyHours} saat bekleniyor, dağıtım toplamı ${totalHours}`);
-        unplacedMappings.push(mapping);
-        continue;
-      }
-      
-      console.log(`🔄 Blok ders yerleştirme başlatılıyor: ${subject.name} (${subject.distributionPattern}) - ${classItem?.name} - ${teacher?.name}`);
-      
-      // Blok ders yerleştirme işlemi
-      const success = placeBlockLesson(
-        mapping,
-        classScheduleGrids[mapping.classId],
-        teacherAvailability,
-        allSubjects,
-        distributionBlocks,
-        true // Ardışık günleri tercih et
-      );
-      
-      if (success) {
-        placedMappings.add(mapping.id);
-        mapping.assignedHours = mapping.weeklyHours; // Tüm saatler atandı
-        console.log(`✅ Blok ders yerleştirildi: ${subject.name} (${subject.distributionPattern}) - ${classItem?.name}`);
-      } else {
-        // İlk denemede başarısız olduysa, ardışık gün tercihini kaldırarak tekrar dene
-        const retrySuccess = placeBlockLesson(
-          mapping,
-          classScheduleGrids[mapping.classId],
-          teacherAvailability,
-          allSubjects,
-          distributionBlocks,
-          false // Ardışık günleri tercih etme
-        );
-        
-        if (retrySuccess) {
-          placedMappings.add(mapping.id);
-          mapping.assignedHours = mapping.weeklyHours; // Tüm saatler atandı
-          console.log(`✅ Blok ders yerleştirildi (ikinci deneme): ${subject.name} (${subject.distributionPattern}) - ${classItem?.name}`);
-        } else {
-          unplacedMappings.push(mapping);
-          console.log(`❌ Blok ders yerleştirilemedi: ${subject.name} (${subject.distributionPattern}) - ${classItem?.name}`);
-        }
-      }
-    } else {
-      // Dağıtım şekli olmayan dersleri sonra işle
-      unplacedMappings.push(mapping);
-    }
-  }
-  
-  // Dağıtım şekli olmayan veya yerleştirilemeyen dersleri tek tek yerleştir
-  console.log(`🔄 Dağıtım şekli olmayan veya yerleştirilemeyen ${unplacedMappings.length} ders için yerleştirme başlatılıyor...`);
-  
   // Sınıf bazlı sıralama
   const sortedClassIds = Array.from(selectedClassIds).sort((a, b) => {
     const classA = allClasses.find(c => c.id === a);
@@ -333,26 +255,108 @@ export function generateSystematicSchedule(
     return (levelOrder[classA?.level || 'Ortaokul'] - levelOrder[classB?.level || 'Ortaokul']) || classA!.name.localeCompare(classB!.name);
   });
   
-  // Her sınıf için yerleştirilmemiş dersleri işle
+  // Her sınıf için yerleştirilecek dersleri takip et
+  const placedMappings = new Set<string>();
+  
+  // Her sınıf için
   for (const classId of sortedClassIds) {
-    const tasksForThisClass = unplacedMappings.filter(t => t.classId === classId && !placedMappings.has(t.id));
+    const classItem = allClasses.find(c => c.id === classId)!;
+    console.log(`🏫 ${classItem.name} sınıfı için ders yerleştirme başlatılıyor...`);
+    
+    // Bu sınıfa ait tüm dersleri al
+    const classLessons = mappings.filter(m => m.classId === classId);
+    
+    // Önce dağıtım şekli olan dersleri yerleştir
+    const lessonsWithDistribution = classLessons.filter(lesson => {
+      const subject = allSubjects.find(s => s.id === lesson.subjectId);
+      return subject?.distributionPattern && !placedMappings.has(lesson.id);
+    });
+    
+    // Dağıtım şekli olan dersleri, blok sayısına göre sırala (daha karmaşık olanlar önce)
+    lessonsWithDistribution.sort((a, b) => {
+      const subjectA = allSubjects.find(s => s.id === a.subjectId);
+      const subjectB = allSubjects.find(s => s.id === b.subjectId);
+      
+      const blocksA = parseDistributionPattern(subjectA!.distributionPattern!).length;
+      const blocksB = parseDistributionPattern(subjectB!.distributionPattern!).length;
+      
+      // Önce blok sayısına göre sırala (daha fazla blok önce)
+      if (blocksA !== blocksB) return blocksB - blocksA;
+      
+      // Sonra haftalık saate göre sırala (daha fazla saat önce)
+      return b.weeklyHours - a.weeklyHours;
+    });
+    
+    // Dağıtım şekli olan dersleri yerleştir
+    for (const lesson of lessonsWithDistribution) {
+      const subject = allSubjects.find(s => s.id === lesson.subjectId)!;
+      const teacher = allTeachers.find(t => t.id === lesson.teacherId)!;
+      
+      console.log(`📚 ${classItem.name} - ${subject.name} (${subject.distributionPattern}) - ${teacher.name} için blok ders yerleştirme başlatılıyor...`);
+      
+      const distributionBlocks = parseDistributionPattern(subject.distributionPattern!);
+      
+      // Toplam saatlerin eşit olduğunu kontrol et
+      const totalHours = distributionBlocks.reduce((sum, hours) => sum + hours, 0);
+      if (totalHours !== lesson.weeklyHours) {
+        console.warn(`⚠️ Uyumsuz dağıtım şekli: ${subject.name} dersi için ${lesson.weeklyHours} saat bekleniyor, dağıtım toplamı ${totalHours}`);
+        continue;
+      }
+      
+      // Blok ders yerleştirme işlemi
+      const success = placeBlockLesson(
+        lesson,
+        classScheduleGrids[classId],
+        teacherAvailability,
+        allSubjects,
+        distributionBlocks,
+        true // Ardışık günleri tercih et
+      );
+      
+      if (success) {
+        placedMappings.add(lesson.id);
+        lesson.assignedHours = lesson.weeklyHours; // Tüm saatler atandı
+        console.log(`✅ Blok ders yerleştirildi: ${subject.name} (${subject.distributionPattern}) - ${classItem.name}`);
+      } else {
+        // İlk denemede başarısız olduysa, ardışık gün tercihini kaldırarak tekrar dene
+        const retrySuccess = placeBlockLesson(
+          lesson,
+          classScheduleGrids[classId],
+          teacherAvailability,
+          allSubjects,
+          distributionBlocks,
+          false // Ardışık günleri tercih etme
+        );
+        
+        if (retrySuccess) {
+          placedMappings.add(lesson.id);
+          lesson.assignedHours = lesson.weeklyHours; // Tüm saatler atandı
+          console.log(`✅ Blok ders yerleştirildi (ikinci deneme): ${subject.name} (${subject.distributionPattern}) - ${classItem.name}`);
+        } else {
+          console.log(`❌ Blok ders yerleştirilemedi: ${subject.name} (${subject.distributionPattern}) - ${classItem.name}`);
+        }
+      }
+    }
+    
+    // Dağıtım şekli olmayan dersleri yerleştir
+    const lessonsWithoutDistribution = classLessons.filter(lesson => 
+      !placedMappings.has(lesson.id)
+    );
     
     // Haftalık saati fazla olan dersleri önce yerleştir
-    tasksForThisClass.sort((a, b) => (b.weeklyHours) - (a.weeklyHours));
+    lessonsWithoutDistribution.sort((a, b) => b.weeklyHours - a.weeklyHours);
     
-    for (const task of tasksForThisClass) {
-      let placedHours = 0;
-      const subject = allSubjects.find(s => s.id === task.subjectId);
-      const classItem = allClasses.find(c => c.id === task.classId);
-      const teacher = allTeachers.find(t => t.id === task.teacherId);
+    for (const lesson of lessonsWithoutDistribution) {
+      const subject = allSubjects.find(s => s.id === lesson.subjectId)!;
+      const teacher = allTeachers.find(t => t.id === lesson.teacherId)!;
       
-      console.log(`🔄 Tekli ders yerleştirme başlatılıyor: ${subject?.name} (${task.weeklyHours} saat) - ${classItem?.name} - ${teacher?.name}`);
+      console.log(`📚 ${classItem.name} - ${subject.name} (${lesson.weeklyHours} saat) - ${teacher.name} için ders yerleştirme başlatılıyor...`);
       
       // Önce blok ders olarak yerleştirmeyi dene (2 veya daha fazla saat için)
-      if (task.weeklyHours >= 2) {
+      if (lesson.weeklyHours >= 2) {
         // Mümkün olan en büyük blokları oluştur
         const blockSizes: number[] = [];
-        let remainingHours = task.weeklyHours;
+        let remainingHours = lesson.weeklyHours;
         
         while (remainingHours > 0) {
           if (remainingHours >= 2) {
@@ -366,8 +370,8 @@ export function generateSystematicSchedule(
         
         // Blok ders yerleştirmeyi dene
         const blockSuccess = placeBlockLesson(
-          task,
-          classScheduleGrids[task.classId],
+          lesson,
+          classScheduleGrids[classId],
           teacherAvailability,
           allSubjects,
           blockSizes,
@@ -375,15 +379,17 @@ export function generateSystematicSchedule(
         );
         
         if (blockSuccess) {
-          placedMappings.add(task.id);
-          task.assignedHours = task.weeklyHours; // Tüm saatler atandı
-          console.log(`✅ Ders blok olarak yerleştirildi: ${subject?.name} - ${classItem?.name}`);
-          continue; // Sonraki göreve geç
+          placedMappings.add(lesson.id);
+          lesson.assignedHours = lesson.weeklyHours; // Tüm saatler atandı
+          console.log(`✅ Ders blok olarak yerleştirildi: ${subject.name} - ${classItem.name}`);
+          continue; // Sonraki derse geç
         }
       }
       
       // Blok yerleştirme başarısız olduysa, tek tek yerleştir
-      for (let hour = 0; hour < task.weeklyHours; hour++) {
+      let placedHours = 0;
+      
+      for (let hour = 0; hour < lesson.weeklyHours; hour++) {
         let placed = false;
         
         // Tüm günleri karıştır
@@ -392,8 +398,8 @@ export function generateSystematicSchedule(
         for (const day of shuffledDays) {
           // Eğer bu gün zaten bu ders için kullanıldıysa, atla
           // Bu, derslerin farklı günlere dağıtılmasını sağlar
-          if (Object.values(classScheduleGrids[task.classId][day] || {}).some(slot => 
-            slot && slot.subjectId === task.subjectId && slot.teacherId === task.teacherId
+          if (Object.values(classScheduleGrids[classId][day] || {}).some(slot => 
+            slot && slot.subjectId === lesson.subjectId && slot.teacherId === lesson.teacherId
           )) {
             continue;
           }
@@ -405,26 +411,31 @@ export function generateSystematicSchedule(
             const slotKey = `${day}-${period}`;
             
             // Slot boş mu ve öğretmen müsait mi kontrol et
-            const isSlotFree = !classScheduleGrids[task.classId][day]?.[period];
-            const isTeacherFree = !teacherAvailability.get(task.teacherId)?.has(slotKey);
+            const isSlotFree = !classScheduleGrids[classId][day]?.[period];
+            const isTeacherFree = !teacherAvailability.get(lesson.teacherId)?.has(slotKey);
+            
+            // Sabit periyot mu kontrol et
+            const isFixedPeriod = period === 'prep' || period === 'breakfast' || 
+                                 period === (classItem.level === 'Ortaokul' ? '6' : '5') || 
+                                 period === 'afternoon-breakfast';
             
             // Kısıtlama kontrolü
-            const isTeacherUnavailable = constraintMap.get(`teacher-${task.teacherId}-${day}-${period}`) === 'unavailable';
-            const isClassUnavailable = constraintMap.get(`class-${task.classId}-${day}-${period}`) === 'unavailable';
-            const isSubjectUnavailable = constraintMap.get(`subject-${task.subjectId}-${day}-${period}`) === 'unavailable';
+            const isTeacherUnavailable = constraintMap.get(`teacher-${lesson.teacherId}-${day}-${period}`) === 'unavailable';
+            const isClassUnavailable = constraintMap.get(`class-${lesson.classId}-${day}-${period}`) === 'unavailable';
+            const isSubjectUnavailable = constraintMap.get(`subject-${lesson.subjectId}-${day}-${period}`) === 'unavailable';
             
-            if (isSlotFree && isTeacherFree && !isTeacherUnavailable && !isClassUnavailable && !isSubjectUnavailable) {
+            if (isSlotFree && isTeacherFree && !isFixedPeriod && !isTeacherUnavailable && !isClassUnavailable && !isSubjectUnavailable) {
               // Ders saatini yerleştir
-              if (!classScheduleGrids[task.classId][day]) classScheduleGrids[task.classId][day] = {};
-              classScheduleGrids[task.classId][day][period] = {
-                subjectId: task.subjectId,
-                teacherId: task.teacherId,
-                classId: task.classId,
+              if (!classScheduleGrids[classId][day]) classScheduleGrids[classId][day] = {};
+              classScheduleGrids[classId][day][period] = {
+                subjectId: lesson.subjectId,
+                teacherId: lesson.teacherId,
+                classId: lesson.classId,
                 isFixed: false
               };
               
               // Öğretmen müsaitlik durumunu güncelle
-              teacherAvailability.get(task.teacherId)!.add(slotKey);
+              teacherAvailability.get(lesson.teacherId)!.add(slotKey);
               
               placedHours++;
               placed = true;
@@ -437,99 +448,26 @@ export function generateSystematicSchedule(
       }
       
       // Yerleştirilen saat sayısını güncelle
-      task.assignedHours = placedHours;
+      lesson.assignedHours = placedHours;
       
-      if (placedHours === task.weeklyHours) {
-        placedMappings.add(task.id);
-        console.log(`✅ Ders tam yerleştirildi: ${subject?.name} - ${classItem?.name}`);
+      if (placedHours === lesson.weeklyHours) {
+        placedMappings.add(lesson.id);
+        console.log(`✅ Ders tam yerleştirildi: ${subject.name} - ${classItem.name}`);
       } else if (placedHours > 0) {
-        console.log(`⚠️ Ders kısmen yerleştirildi: ${subject?.name} - ${classItem?.name} (${placedHours}/${task.weeklyHours})`);
+        console.log(`⚠️ Ders kısmen yerleştirildi: ${subject.name} - ${classItem.name} (${placedHours}/${lesson.weeklyHours})`);
       } else {
-        console.log(`❌ Ders yerleştirilemedi: ${subject?.name} - ${classItem?.name}`);
+        console.log(`❌ Ders yerleştirilemedi: ${subject.name} - ${classItem.name}`);
       }
     }
-  }
-
-  // --- Etüt Doldurma Aşaması (Opsiyonel) ---
-  console.log('🔄 Eksik saatler için akıllı etüt doldurma adımı başlatılıyor...');
-  const etutSubject = allSubjects.find(s => s.name.toLowerCase().includes('etüt')) || { id: 'etut-dersi', name: 'Etüt', branch: 'Etüt' };
-  
-  for (const classId of sortedClassIds) {
-    const classItem = allClasses.find(c => c.id === classId)!;
-    const classGrid = classScheduleGrids[classId];
-    let currentHours = 0;
     
-    // Mevcut ders saati sayısını hesapla
-    DAYS.forEach(day => {
-      PERIODS.forEach(period => { 
-        if (classGrid[day]?.[period] && !classGrid[day][period].isFixed) currentHours++; 
-      });
-    });
-    
-    const TOTAL_TARGET_HOURS = classTargetHours.get(classId) || 45;
-    const hoursToFill = TOTAL_TARGET_HOURS - currentHours;
-
-    if (hoursToFill > 0) {
-      let dutyTeacher = allTeachers.find(t => t.id === classItem.classTeacherId);
-      if (!dutyTeacher) {
-        const teachersForThisClass = new Set(mappings.filter(m => m.classId === classId).map(m => m.teacherId));
-        if (teachersForThisClass.size > 0) {
-          const teacherLoads = Array.from(teachersForThisClass).map(teacherId => ({ 
-            teacherId, 
-            load: Array.from(teacherAvailability.get(teacherId) || new Set()).length 
-          }));
-          teacherLoads.sort((a, b) => a.load - b.load);
-          dutyTeacher = allTeachers.find(t => t.id === teacherLoads[0].teacherId);
-        }
-      }
-      
-      if (dutyTeacher && teacherAvailability.has(dutyTeacher.id)) {
-        let filledCount = 0;
-        const emptySlotsForClass = [];
-        
-        // Boş slotları bul
-        DAYS.forEach(day => {
-          PERIODS.forEach(period => { 
-            if (!classGrid[day]?.[period]) {
-              emptySlotsForClass.push(`${day}-${period}`);
-            }
-          });
-        });
-        
-        // Rastgele sırala
-        emptySlotsForClass.sort(() => Math.random() - 0.5);
-
-        for (const slotKey of emptySlotsForClass) {
-          if (filledCount >= hoursToFill) break;
-          
-          const [day, period] = slotKey.split('-');
-          const isTeacherFree = !teacherAvailability.get(dutyTeacher.id)?.has(slotKey);
-          
-          if (isTeacherFree) {
-            if (!classGrid[day]) classGrid[day] = {};
-            classGrid[day][period] = { 
-              subjectId: etutSubject.id, 
-              teacherId: dutyTeacher.id, 
-              classId, 
-              isFixed: false 
-            };
-            teacherAvailability.get(dutyTeacher.id)!.add(slotKey);
-            filledCount++;
-          }
-        }
-        
-        console.log(`  -> ${classItem.name} için ${filledCount}/${hoursToFill} saat etüt atandı. Sorumlu: ${dutyTeacher.name}`);
-      } else {
-        console.warn(`  -> ${classItem.name} için etüt atayacak uygun öğretmen bulunamadı.`);
-      }
-    }
+    console.log(`✅ ${classItem.name} sınıfı için ders yerleştirme tamamlandı.`);
   }
 
   // --- Sonuçları Oluşturma ve Raporlama Aşaması ---
   const teacherSchedules: { [teacherId: string]: Schedule['schedule'] } = {};
   
   // Sınıf programlarından öğretmen programlarını oluştur
-  Object.values(classScheduleGrids).forEach(classGrid => {
+  Object.entries(classScheduleGrids).forEach(([classId, classGrid]) => {
     Object.entries(classGrid).forEach(([day, periods]) => {
       Object.entries(periods).forEach(([period, slot]) => {
         if (slot && slot.teacherId && !slot.isFixed) {
@@ -537,6 +475,11 @@ export function generateSystematicSchedule(
             teacherSchedules[slot.teacherId] = {};
             DAYS.forEach(d => teacherSchedules[slot.teacherId][d] = {});
           }
+          
+          if (!teacherSchedules[slot.teacherId][day]) {
+            teacherSchedules[slot.teacherId][day] = {};
+          }
+          
           teacherSchedules[slot.teacherId][day][period] = { 
             classId: slot.classId, 
             subjectId: slot.subjectId, 
@@ -552,6 +495,10 @@ export function generateSystematicSchedule(
     const teacher = allTeachers.find(t => t.id === teacherId);
     if (teacher) {
       DAYS.forEach(day => {
+        if (!teacherSchedules[teacherId][day]) {
+          teacherSchedules[teacherId][day] = {};
+        }
+        
         // Hazırlık/Kahvaltı
         teacherSchedules[teacherId][day]['prep'] = { 
           classId: 'fixed-period', 
@@ -611,6 +558,41 @@ export function generateSystematicSchedule(
 
   console.log(`✅ Program oluşturma tamamlandı. Süre: ${(Date.now() - startTime) / 1000} saniye.`);
   console.log(`📊 İstatistik: ${stats.placedLessons} / ${stats.totalLessonsToPlace} ders yerleştirildi (${Math.round(stats.placedLessons / stats.totalLessonsToPlace * 100)}%).`);
+  
+  // Öğretmen ders saati sayılarını kontrol et ve raporla
+  const teacherHourCounts = new Map<string, number>();
+  
+  Object.entries(teacherSchedules).forEach(([teacherId, schedule]) => {
+    let count = 0;
+    Object.values(schedule).forEach(day => {
+      Object.entries(day).forEach(([period, slot]) => {
+        // Sadece normal dersleri say, sabit periyotları sayma
+        if (slot && !slot.isFixed && slot.classId !== 'fixed-period') {
+          count++;
+        }
+      });
+    });
+    teacherHourCounts.set(teacherId, count);
+  });
+  
+  // Öğretmenlerin ders saati sayılarını raporla
+  console.log('📊 Öğretmen ders saati dağılımı:');
+  teacherHourCounts.forEach((hours, teacherId) => {
+    const teacher = allTeachers.find(t => t.id === teacherId);
+    if (teacher) {
+      // Öğretmenin CSV'den gelen toplam ders saatini hesapla
+      const expectedHours = mappings
+        .filter(m => m.teacherId === teacherId)
+        .reduce((sum, m) => sum + m.weeklyHours, 0);
+      
+      console.log(`- ${teacher.name}: ${hours}/${expectedHours} saat`);
+      
+      // Eksik saat varsa uyarı ver
+      if (hours < expectedHours) {
+        console.warn(`⚠️ ${teacher.name} için ${expectedHours - hours} saat eksik!`);
+      }
+    }
+  });
   
   // Blok ders yerleştirme istatistikleri
   const blockLessonStats = analyzeBlockLessonPlacement(classScheduleGrids, allSubjects, allTeachers);

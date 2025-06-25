@@ -6,7 +6,7 @@ export interface ParsedCSVData {
   teachers: Map<string, Partial<Teacher>>;
   classes: Map<string, Partial<Class & { tempAssignments: Map<string, Set<string>>, classTeacherName: string | null }>>;
   subjects: Map<string, Partial<Subject>>;
-  classSubjectTeacherLinks: { className: string,  subjectKey: string, teacherName: string }[];
+  classSubjectTeacherLinks: { className: string, subjectKey: string, teacherName: string }[];
   errors: string[];
 }
 
