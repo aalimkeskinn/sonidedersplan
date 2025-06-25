@@ -40,7 +40,7 @@ export function generateSystematicSchedule(
 ): EnhancedGenerationResult {
   
   const startTime = Date.now();
-  console.log('🚀 Program oluşturma başlatıldı (v36 - Sınıf Bazlı Gelişmiş Blok Ders Yerleştirme)...');
+  console.log('🚀 Program oluşturma başlatıldı (v37 - Tüm Öğretmenler İçin Program Oluşturma)...');
 
   // --- Hazırlık Aşaması ---
   const classScheduleGrids: { [classId: string]: Schedule['schedule'] } = {};
@@ -61,6 +61,7 @@ export function generateSystematicSchedule(
   });
 
   const selectedClassIds = new Set(mappings.map(m => m.classId));
+  const selectedTeacherIds = new Set(mappings.map(m => m.teacherId));
 
   // Sınıf programlarını ve sabit periyotları oluştur
   allClasses.forEach(c => {
@@ -75,7 +76,7 @@ export function generateSystematicSchedule(
   
   // Öğretmen müsaitlik durumlarını başlat
   allTeachers.forEach(t => {
-    if (mappings.some(m => m.teacherId === t.id)) {
+    if (selectedTeacherIds.has(t.id)) {
       teacherAvailability.set(t.id, new Set<string>());
       
       // Sabit periyotları öğretmen müsaitlik durumuna ekle
@@ -116,10 +117,8 @@ export function generateSystematicSchedule(
   
   // Her öğretmen için yerleştirilen ders saatlerini takip et
   const teacherPlacedHours = new Map<string, number>();
-  allTeachers.forEach(t => {
-    if (mappings.some(m => m.teacherId === t.id)) {
-      teacherPlacedHours.set(t.id, 0);
-    }
+  selectedTeacherIds.forEach(teacherId => {
+    teacherPlacedHours.set(teacherId, 0);
   });
   
   // Her sınıf için
@@ -245,9 +244,17 @@ export function generateSystematicSchedule(
   });
 
   // Sabit periyotları öğretmen programlarına ekle
-  Object.keys(teacherSchedules).forEach(teacherId => {
+  selectedTeacherIds.forEach(teacherId => {
     const teacher = allTeachers.find(t => t.id === teacherId);
     if (teacher) {
+      // Eğer bu öğretmen için program oluşturulmadıysa, boş bir program oluştur
+      if (!teacherSchedules[teacherId]) {
+        teacherSchedules[teacherId] = {};
+        DAYS.forEach(day => {
+          teacherSchedules[teacherId][day] = {};
+        });
+      }
+      
       DAYS.forEach(day => {
         if (!teacherSchedules[teacherId][day]) {
           teacherSchedules[teacherId][day] = {};
@@ -365,6 +372,23 @@ export function generateSystematicSchedule(
       }
     }
   });
+  
+  // Oluşturulan program sayısını kontrol et
+  console.log(`📊 Toplam ${finalSchedules.length} öğretmen programı oluşturuldu.`);
+  console.log(`📊 Toplam ${selectedTeacherIds.size} öğretmen seçildi.`);
+  
+  if (finalSchedules.length < selectedTeacherIds.size) {
+    console.warn(`⚠️ ${selectedTeacherIds.size - finalSchedules.length} öğretmen için program oluşturulamadı!`);
+    
+    // Hangi öğretmenler için program oluşturulmadı?
+    const teachersWithSchedules = new Set(finalSchedules.map(s => s.teacherId));
+    const teachersWithoutSchedules = Array.from(selectedTeacherIds).filter(id => !teachersWithSchedules.has(id));
+    
+    teachersWithoutSchedules.forEach(teacherId => {
+      const teacher = allTeachers.find(t => t.id === teacherId);
+      console.warn(`⚠️ ${teacher?.name || teacherId} için program oluşturulamadı!`);
+    });
+  }
   
   const finalWarnings: string[] = [];
   if (stats.unassignedLessons.length > 0) {

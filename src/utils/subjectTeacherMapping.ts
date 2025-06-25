@@ -29,6 +29,8 @@ export function createSubjectTeacherMappings(
   const selectedSubjectIds = new Set(wizardData.subjects.selectedSubjects);
   const selectedTeacherIds = new Set(wizardData.teachers.selectedTeachers);
 
+  console.log(`🔍 Görev oluşturma başlatılıyor: ${selectedClassIds.size} sınıf, ${selectedSubjectIds.size} ders, ${selectedTeacherIds.size} öğretmen`);
+
   // 1. ADIM: Sadece sihirbazda seçilmiş sınıfları döngüye al.
   for (const classId of selectedClassIds) {
     const classItem = allClasses.find(c => c.id === classId);
@@ -39,27 +41,33 @@ export function createSubjectTeacherMappings(
       continue;
     }
 
+    console.log(`🏫 ${classItem.name} sınıfı için görevler oluşturuluyor...`);
+
     // 2. ADIM: Bu sınıfa özel olarak atanmış öğretmen-ders gruplarını (assignments) döngüye al.
     // Bu, CSV'den gelen %100 doğru veridir.
     for (const assignment of classItem.assignments) {
       const teacherId = assignment.teacherId;
+      const teacher = allTeachers.find(t => t.id === teacherId);
 
       // Eğer bu atamadaki öğretmen, sihirbazda seçilmemişse, bu atamayı dikkate alma.
       if (!selectedTeacherIds.has(teacherId)) {
+        console.log(`⏩ ${teacher?.name || teacherId} öğretmeni sihirbazda seçilmediği için atlandı.`);
         continue;
       }
       
-      const teacher = allTeachers.find(t => t.id === teacherId);
       if (!teacher) {
         console.warn(`⚠️ ${teacherId} ID'li öğretmen bulunamadı.`);
         continue;
       }
+
+      console.log(`👨‍🏫 ${teacher.name} öğretmeni için dersler kontrol ediliyor...`);
       
       // 3. ADIM: Bu öğretmenin bu sınıfta vereceği spesifik dersleri döngüye al.
       for (const subjectId of assignment.subjectIds) {
         
         // Eğer bu ders, sihirbazda seçilmemişse ("check" edilmemişse), bu dersi dikkate alma.
         if (!selectedSubjectIds.has(subjectId)) {
+          console.log(`⏩ ${subjectId} dersi sihirbazda seçilmediği için atlandı.`);
           continue;
         }
         
@@ -89,6 +97,8 @@ export function createSubjectTeacherMappings(
             assignedHours: 0, // Başlangıçta 0 olarak ayarla
             priority: 'medium', // Bu alan şimdilik kullanılmıyor ama yapısal olarak kalabilir
           });
+        } else {
+          console.warn(`⚠️ ${classItem.name} - ${subject.name} kombinasyonu zaten eklenmiş.`);
         }
       }
     }
@@ -101,12 +111,22 @@ export function createSubjectTeacherMappings(
 
   // Oluşturulan görevleri logla
   console.log(`📊 Toplam ${mappings.length} görev oluşturuldu.`);
+  
+  // Öğretmen bazlı görev sayılarını ve toplam saatleri hesapla
+  const teacherTaskCounts = new Map<string, number>();
+  const teacherHourCounts = new Map<string, number>();
+  
   mappings.forEach(m => {
-    const classItem = allClasses.find(c => c.id === m.classId);
-    const subject = allSubjects.find(s => s.id === m.subjectId);
-    const teacher = allTeachers.find(t => t.id === m.teacherId);
-    
-    console.log(`- ${classItem?.name || m.classId} / ${subject?.name || m.subjectId} / ${teacher?.name || m.teacherId}: ${m.weeklyHours} saat`);
+    const teacherId = m.teacherId;
+    teacherTaskCounts.set(teacherId, (teacherTaskCounts.get(teacherId) || 0) + 1);
+    teacherHourCounts.set(teacherId, (teacherHourCounts.get(teacherId) || 0) + m.weeklyHours);
+  });
+  
+  console.log(`📊 Öğretmen bazlı görev dağılımı:`);
+  teacherTaskCounts.forEach((count, teacherId) => {
+    const teacher = allTeachers.find(t => t.id === teacherId);
+    const hours = teacherHourCounts.get(teacherId) || 0;
+    console.log(`- ${teacher?.name || teacherId}: ${count} görev, toplam ${hours} saat`);
   });
 
   return { mappings, errors };

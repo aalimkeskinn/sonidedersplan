@@ -1,4 +1,4 @@
-// --- START OF FILE src/pages/ScheduleWizard.tsx ---
+// src/pages/ScheduleWizard.tsx
 
 import React, { useState, useEffect } from 'react';
 import { 
@@ -62,7 +62,23 @@ const ScheduleWizard = () => {
     classes: { selectedClasses: [], classCapacities: {}, classPreferences: {} },
     classrooms: [],
     teachers: { selectedTeachers: [], teacherSubjects: {}, teacherMaxHours: {}, teacherPreferences: {} },
-    constraints: { timeConstraints: [], globalRules: { maxDailyHoursTeacher: 8, maxDailyHoursClass: 9, maxConsecutiveHours: 3, avoidConsecutiveSameSubject: true, preferMorningHours: true, avoidFirstLastPeriod: false, lunchBreakRequired: true, lunchBreakDuration: 1 } },
+    constraints: { 
+      timeConstraints: [], 
+      globalRules: { 
+        maxDailyHoursTeacher: 8, 
+        maxDailyHoursClass: 9, 
+        maxConsecutiveHours: 3, 
+        avoidConsecutiveSameSubject: true, 
+        preferMorningHours: true, 
+        avoidFirstLastPeriod: false, 
+        lunchBreakRequired: true, 
+        lunchBreakDuration: 1,
+        useDistributionPatterns: true, // YENİ: Dağıtım şekillerini kullan
+        preferBlockScheduling: true, // YENİ: Blok ders yerleştirmeyi tercih et
+        enforceDistributionPatterns: false, // YENİ: Dağıtım şekillerine kesinlikle uy
+        maximumBlockSize: 2 // YENİ: Maksimum blok boyutu
+      } 
+    },
     generationSettings: { algorithm: 'balanced', prioritizeTeacherPreferences: true, prioritizeClassPreferences: true, allowOverlaps: false, generateMultipleOptions: true, optimizationLevel: 'balanced' }
   });
 
@@ -158,6 +174,10 @@ const ScheduleWizard = () => {
         return;
       }
       
+      // Öğretmen sayısını ve görev sayısını logla
+      const uniqueTeacherIds = new Set(mappings.map(m => m.teacherId));
+      console.log(`📊 Toplam ${uniqueTeacherIds.size} öğretmen için ${mappings.length} görev oluşturuldu.`);
+      
       const result = generateSystematicSchedule(mappings, teachers, classes, subjects, wizardData.constraints?.timeConstraints || []);
       
       if (!result || !result.schedules) {
@@ -176,6 +196,11 @@ const ScheduleWizard = () => {
       if (unassignedLessons.length > 0) {
         const warningMessage = unassignedLessons.map(ul => `'${ul.className}' > '${ul.subjectName}': ${ul.missingHours} saat eksik`).join('\n');
         warning("Eksik Dersler", `Bazı dersler programda tam olarak yerleştirilemedi:\n${warningMessage}`);
+      }
+      
+      // Oluşturulan program sayısını kontrol et
+      if (result.schedules.length < uniqueTeacherIds.size) {
+        warning("Eksik Programlar", `${uniqueTeacherIds.size} öğretmenden sadece ${result.schedules.length} tanesi için program oluşturulabildi.`);
       }
       
       const teacherIdsInNewSchedule = new Set(result.schedules.map(s => s.teacherId));
