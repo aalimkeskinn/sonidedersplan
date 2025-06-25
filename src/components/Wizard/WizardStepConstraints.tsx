@@ -97,7 +97,7 @@ const WizardStepConstraints: React.FC<WizardStepConstraintsProps> = ({
       PERIODS.forEach(period => {
         const constraintType: ConstraintType = (day === template.day && template.periods.includes(period)) ? 'preferred' : 'unavailable';
         newConstraints.push({
-          id: `${selectedEntity}-${day}-${period}`,
+          id: `${selectedEntity}-${day}-${period}-${Date.now()}`,
           entityType: 'subject',
           entityId: selectedEntity,
           day, period, constraintType,
@@ -164,7 +164,66 @@ const WizardStepConstraints: React.FC<WizardStepConstraintsProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-1">Maksimum Ardışık Ders</label>
               <input type="number" min="1" max="5" value={globalConstraints.maxConsecutiveHours || 3} onChange={(e) => handleGlobalConstraintChange('maxConsecutiveHours', parseInt(e.target.value))} className="w-full px-3 py-2 border border-gray-300 rounded-md"/>
             </div>
-            <div className="flex items-center"><input type="checkbox" id="avoidConsecutive" checked={globalConstraints.avoidConsecutiveSameSubject || false} onChange={(e) => handleGlobalConstraintChange('avoidConsecutiveSameSubject', e.target.checked)} className="mr-2" /><label htmlFor="avoidConsecutive" className="text-sm">Aynı dersin ardışık olmasını önle</label></div>
+            <div className="flex items-center">
+              <input type="checkbox" id="avoidConsecutive" checked={globalConstraints.avoidConsecutiveSameSubject || false} onChange={(e) => handleGlobalConstraintChange('avoidConsecutiveSameSubject', e.target.checked)} className="mr-2" />
+              <label htmlFor="avoidConsecutive" className="text-sm">Aynı dersin ardışık olmasını önle</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* YENİ: Blok Ders ve Dağıtım Şekli Ayarları */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <h4 className="font-medium text-gray-900 mb-3">Blok Ders ve Dağıtım Şekli Ayarları</h4>
+        <div className="space-y-3">
+          <div className="flex items-center">
+            <input 
+              type="checkbox" 
+              id="useDistributionPatterns" 
+              checked={globalConstraints.useDistributionPatterns || false} 
+              onChange={(e) => handleGlobalConstraintChange('useDistributionPatterns', e.target.checked)} 
+              className="mr-2" 
+            />
+            <label htmlFor="useDistributionPatterns" className="text-sm font-medium">
+              Dağıtım şekillerini kullan
+            </label>
+          </div>
+          <p className="text-xs text-gray-600 ml-6">
+            Derslerin tanımlanan dağıtım şekillerine (2+2+2 gibi) göre yerleştirilmesini sağlar.
+          </p>
+          
+          <div className="flex items-center">
+            <input 
+              type="checkbox" 
+              id="preferBlockScheduling" 
+              checked={globalConstraints.preferBlockScheduling || false} 
+              onChange={(e) => handleGlobalConstraintChange('preferBlockScheduling', e.target.checked)} 
+              className="mr-2" 
+            />
+            <label htmlFor="preferBlockScheduling" className="text-sm font-medium">
+              Blok ders yerleştirmeyi tercih et
+            </label>
+          </div>
+          <p className="text-xs text-gray-600 ml-6">
+            Mümkün olduğunca dersleri ardışık saatlere (blok halinde) yerleştirmeye çalışır.
+          </p>
+          
+          <div className="p-3 bg-blue-50 rounded-lg mt-2">
+            <div className="flex items-start">
+              <div className="flex-shrink-0">
+                <Clock className="h-5 w-5 text-blue-600 mt-0.5" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-blue-800">Blok Ders Yerleştirme</h3>
+                <p className="text-xs text-blue-700 mt-1">
+                  Blok ders yerleştirme, derslerin dağıtım şekline göre (örn: 2+2+2) yerleştirilmesini sağlar. 
+                  Bu özellik, derslerin hafta boyunca nasıl dağıtılacağını kontrol etmenize olanak tanır.
+                </p>
+                <p className="text-xs text-blue-700 mt-1">
+                  Örneğin, "2+2+2" şeklinde bir dağıtım, dersin 3 farklı günde 2'şer saat olarak işleneceğini belirtir.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </div>

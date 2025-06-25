@@ -48,6 +48,8 @@ export interface WizardData {
       avoidFirstLastPeriod: boolean;
       lunchBreakRequired: boolean;
       lunchBreakDuration: number;
+      useDistributionPatterns?: boolean; // YENİ: Dağıtım şekillerini kullan
+      preferBlockScheduling?: boolean; // YENİ: Blok ders yerleştirmeyi tercih et
     };
   };
   generationSettings: {
