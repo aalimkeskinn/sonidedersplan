@@ -87,3 +87,5 @@ export function createSubjectTeacherMappings(
 
   return { mappings, errors };
 }
+
+// --- END OF FILE src/utils/subjectTeacherMapping.ts ---
