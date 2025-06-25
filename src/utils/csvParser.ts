@@ -119,3 +119,5 @@ export const parseComprehensiveCSV = (csvContent: string): ParsedCSVData => {
 
   return { teachers, classes, subjects, classSubjectTeacherLinks, errors };
 };
+
+// --- END OF FILE src/utils/csvParser.ts ---
