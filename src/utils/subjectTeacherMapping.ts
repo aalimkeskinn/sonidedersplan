@@ -34,7 +34,8 @@ export function createSubjectTeacherMappings(
     const classItem = allClasses.find(c => c.id === classId);
     
     // Eğer sınıf bulunamazsa veya sınıfa hiç öğretmen/ders atanmamışsa, bu sınıfı atla.
-    if (!classItem || !classItem.assignments) {
+    if (!classItem || !classItem.assignments || classItem.assignments.length === 0) {
+      console.warn(`⚠️ ${classItem?.name || classId} sınıfı için atama bulunamadı veya sınıf geçersiz.`);
       continue;
     }
 
@@ -48,6 +49,12 @@ export function createSubjectTeacherMappings(
         continue;
       }
       
+      const teacher = allTeachers.find(t => t.id === teacherId);
+      if (!teacher) {
+        console.warn(`⚠️ ${teacherId} ID'li öğretmen bulunamadı.`);
+        continue;
+      }
+      
       // 3. ADIM: Bu öğretmenin bu sınıfta vereceği spesifik dersleri döngüye al.
       for (const subjectId of assignment.subjectIds) {
         
@@ -58,23 +65,30 @@ export function createSubjectTeacherMappings(
         
         const subject = allSubjects.find(s => s.id === subjectId);
         
+        if (!subject) {
+          console.warn(`⚠️ ${subjectId} ID'li ders bulunamadı.`);
+          continue;
+        }
+        
         // Eğer ders geçerliyse, görev listesine (mappings) ekle.
-        if (subject) {
-            // Güvenlik kontrolü: Aynı ders-sınıf kombinasyonunu birden fazla eklemeyi önle.
-            const mappingExists = mappings.some(m => m.classId === classId && m.subjectId === subjectId);
-            if (!mappingExists) {
-                mappings.push({
-                  id: `${classId}-${subjectId}`,
-                  classId,
-                  subjectId,
-                  teacherId,
-                  // 4. ADIM: Haftalık ders saatini, sihirbazda kullanıcının girdiği değerden al.
-                  // Eğer sihirbazda bir değer girilmemişse, dersin varsayılan saatini kullan.
-                  weeklyHours: wizardData.subjects.subjectHours[subjectId] || subject.weeklyHours,
-                  assignedHours: 0, // Başlangıçta 0 olarak ayarla
-                  priority: 'medium', // Bu alan şimdilik kullanılmıyor ama yapısal olarak kalabilir
-                });
-            }
+        // Güvenlik kontrolü: Aynı ders-sınıf kombinasyonunu birden fazla eklemeyi önle.
+        const mappingExists = mappings.some(m => m.classId === classId && m.subjectId === subjectId);
+        if (!mappingExists) {
+          // 4. ADIM: Haftalık ders saatini, sihirbazda kullanıcının girdiği değerden al.
+          // Eğer sihirbazda bir değer girilmemişse, dersin varsayılan saatini kullan.
+          const weeklyHours = wizardData.subjects.subjectHours[subjectId] || subject.weeklyHours;
+          
+          console.log(`📝 Görev oluşturuluyor: ${classItem.name} - ${subject.name} - ${teacher.name} - ${weeklyHours} saat`);
+          
+          mappings.push({
+            id: `${classId}-${subjectId}`,
+            classId,
+            subjectId,
+            teacherId,
+            weeklyHours,
+            assignedHours: 0, // Başlangıçta 0 olarak ayarla
+            priority: 'medium', // Bu alan şimdilik kullanılmıyor ama yapısal olarak kalabilir
+          });
         }
       }
     }
@@ -84,6 +98,16 @@ export function createSubjectTeacherMappings(
   if (mappings.length === 0 && wizardData.subjects.selectedSubjects.length > 0) {
     errors.push("Seçimleriniz arasında geçerli bir ders atama ilişkisi bulunamadı. Lütfen 'Sınıflar' veya 'Veri Yönetimi' ekranından öğretmenlere ders atadığınızdan emin olun.");
   }
+
+  // Oluşturulan görevleri logla
+  console.log(`📊 Toplam ${mappings.length} görev oluşturuldu.`);
+  mappings.forEach(m => {
+    const classItem = allClasses.find(c => c.id === m.classId);
+    const subject = allSubjects.find(s => s.id === m.subjectId);
+    const teacher = allTeachers.find(t => t.id === m.teacherId);
+    
+    console.log(`- ${classItem?.name || m.classId} / ${subject?.name || m.subjectId} / ${teacher?.name || m.teacherId}: ${m.weeklyHours} saat`);
+  });
 
   return { mappings, errors };
 }

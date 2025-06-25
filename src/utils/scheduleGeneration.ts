@@ -40,7 +40,7 @@ export function generateSystematicSchedule(
 ): EnhancedGenerationResult {
   
   const startTime = Date.now();
-  console.log('🚀 Program oluşturma başlatıldı (v35 - Sınıf Bazlı Gelişmiş Blok Ders Yerleştirme)...');
+  console.log('🚀 Program oluşturma başlatıldı (v36 - Sınıf Bazlı Gelişmiş Blok Ders Yerleştirme)...');
 
   // --- Hazırlık Aşaması ---
   const classScheduleGrids: { [classId: string]: Schedule['schedule'] } = {};
@@ -309,8 +309,6 @@ export function generateSystematicSchedule(
       const teacherMappings = mappings.filter(m => m.teacherId === teacherId);
       
       // Her sınıf için eksik saatleri hesapla
-      const classMissingHours = new Map<string, number>();
-      
       teacherMappings.forEach(mapping => {
         const classId = mapping.classId;
         const subjectId = mapping.subjectId;
