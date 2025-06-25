@@ -6,7 +6,7 @@ export interface ParsedCSVData {
   teachers: Map<string, Partial<Teacher>>;
   classes: Map<string, Partial<Class & { tempAssignments: Map<string, Set<string>>, classTeacherName: string | null }>>;
   subjects: Map<string, Partial<Subject>>;
-  classSubjectTeacherLinks: { className: string, subjectKey: string, teacherName: string }[];
+  classSubjectTeacherLinks: { className: string,  subjectKey: string, teacherName: string }[];
   errors: string[];
 }
 
@@ -37,7 +37,8 @@ export const parseComprehensiveCSV = (csvContent: string): ParsedCSVData => {
       return;
     }
     
-    const [teacherNameStr, branchStr, levelStr, subjectNameStr, classNameStr, weeklyHoursStr] = columns;
+    // YENİ: Dağıtım şekli sütununu da al
+    const [teacherNameStr, branchStr, levelStr, subjectNameStr, classNameStr, weeklyHoursStr, distributionPatternStr] = columns;
     
     if (!teacherNameStr || !branchStr || !levelStr || !subjectNameStr || !classNameStr) {
       if(line.trim()) errors.push(`${index + 2}. satırda zorunlu alanlardan biri (öğretmen, branş, seviye, ders, sınıf) eksik.`);
@@ -69,6 +70,7 @@ export const parseComprehensiveCSV = (csvContent: string): ParsedCSVData => {
             levels: levels,
             level: levels[0],
             weeklyHours: weeklyHours,
+            distributionPattern: distributionPatternStr || undefined, // YENİ: Dağıtım şekli
         });
     }
     

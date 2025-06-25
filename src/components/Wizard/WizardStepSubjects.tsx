@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { BookOpen, Plus, Minus, Edit, Trash2, CheckSquare, Square } from 'lucide-react';
-import { Subject, EDUCATION_LEVELS } from '../../types';
+import { BookOpen, Plus, Minus, Edit, Trash2, CheckSquare, Square, Clock, Lightbulb } from 'lucide-react';
+import { Subject, EDUCATION_LEVELS, parseDistributionPattern, validateDistributionPattern, generateDistributionSuggestions } from '../../types';
 import { WizardData } from '../../types/wizard';
 import { useFirestore } from '../../hooks/useFirestore';
 import { useToast } from '../../hooks/useToast';
@@ -25,7 +25,8 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
     name: '',
     branch: '',
     levels: [] as ('Anaokulu' | 'İlkokul' | 'Ortaokul')[],
-    weeklyHours: '1'
+    weeklyHours: '1',
+    distributionPattern: '', // YENİ ALAN
   });
 
   const filteredSubjects = allSubjects.filter(subject => !selectedLevel || (subject.levels || [subject.level]).includes(selectedLevel as any));
@@ -101,7 +102,7 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
   const getTotalWeeklyHours = () => selectedSubjects.reduce((sum, subject) => sum + (data.subjectHours[subject.id] || subject.weeklyHours), 0);
   
   const resetForm = () => {
-    setFormData({ name: '', branch: '', levels: [], weeklyHours: '1' });
+    setFormData({ name: '', branch: '', levels: [], weeklyHours: '1', distributionPattern: '' });
     setEditingSubject(null);
     setIsModalOpen(false);
   };
@@ -110,12 +111,21 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
     e.preventDefault();
     if (formData.levels.length === 0) { error('❌ Eğitim Seviyesi Gerekli', 'En az bir eğitim seviyesi seçmelisiniz.'); return; }
     
+    const weeklyHours = parseInt(formData.weeklyHours) || 1;
+    
+    // Dağıtım şekli validasyonu
+    if (formData.distributionPattern && !validateDistributionPattern(formData.distributionPattern, weeklyHours)) {
+      error('❌ Geçersiz Dağıtım Şekli', 'Dağıtım şeklindeki saatlerin toplamı haftalık saat ile eşleşmiyor.');
+      return;
+    }
+    
     const subjectData = { 
       name: formData.name, 
       branch: formData.branch, 
       level: formData.levels[0], 
       levels: formData.levels, 
-      weeklyHours: parseInt(formData.weeklyHours) || 1 
+      weeklyHours: weeklyHours,
+      distributionPattern: formData.distributionPattern || undefined, // YENİ ALAN
     };
 
     try {
@@ -137,7 +147,8 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
       name: subject.name, 
       branch: subject.branch, 
       levels: subject.levels || (subject.level ? [subject.level] : []), 
-      weeklyHours: subject.weeklyHours.toString() 
+      weeklyHours: subject.weeklyHours.toString(),
+      distributionPattern: subject.distributionPattern || '', // YENİ ALAN
     });
     setEditingSubject(subject);
     setIsModalOpen(true);
@@ -157,6 +168,17 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
   const handleLevelToggle = (level: 'Anaokulu' | 'İlkokul' | 'Ortaokul') => {
     setFormData(prev => ({...prev, levels: prev.levels.includes(level) ? prev.levels.filter(l => l !== level) : [...prev.levels, level]}));
   };
+
+  // YENİ: Dağıtım şekli önerilerini uygulama
+  const applySuggestion = (suggestion: string) => {
+    setFormData(prev => ({ ...prev, distributionPattern: suggestion }));
+  };
+
+  // YENİ: Haftalık saat değiştiğinde dağıtım şekli önerilerini güncelle
+  const weeklyHours = parseInt(formData.weeklyHours) || 1;
+  const suggestions = generateDistributionSuggestions(weeklyHours);
+  const isValidPattern = formData.distributionPattern ? validateDistributionPattern(formData.distributionPattern, weeklyHours) : true;
+  const parsedPattern = parseDistributionPattern(formData.distributionPattern);
 
   // Filtrelenmiş derslerin seçim durumunu kontrol et
   const filteredSelectedCount = filteredSubjects.filter(s => data.selectedSubjects.includes(s.id)).length;
@@ -227,7 +249,17 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="font-medium text-sm">{s.name}</p>
-                        <p className="text-xs text-gray-600">{s.branch} • {(s.levels || [s.level]).join(', ')} • {s.weeklyHours} sa/h</p>
+                        <div className="flex items-center space-x-2 text-xs text-gray-600">
+                          <span>{s.branch} • {(s.levels || [s.level]).join(', ')} • {s.weeklyHours} sa/h</span>
+                          
+                          {/* YENİ: Dağıtım şekli gösterimi */}
+                          {s.distributionPattern && (
+                            <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
+                              <Clock className="w-3 h-3 mr-1" />
+                              {s.distributionPattern}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center space-x-2">
                         <button onClick={() => handleEdit(s)} className="p-1 text-gray-400 hover:text-blue-600">
@@ -281,7 +313,17 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <p className="font-medium text-sm">{s.name}</p>
-                        <p className="text-xs text-gray-600">{s.branch} • {(s.levels || [s.level]).join(', ')}</p>
+                        <div className="flex items-center space-x-2 text-xs text-gray-600">
+                          <span>{s.branch} • {(s.levels || [s.level]).join(', ')}</span>
+                          
+                          {/* YENİ: Dağıtım şekli gösterimi */}
+                          {s.distributionPattern && (
+                            <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
+                              <Clock className="w-3 h-3 mr-1" />
+                              {s.distributionPattern}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <button 
                         onClick={() => handleSubjectToggle(s.id)} 
@@ -315,6 +357,13 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
                         >
                           +
                         </button>
+                        
+                        {/* YENİ: Dağıtım şekli bilgisi */}
+                        {s.distributionPattern && (
+                          <span className="ml-2 text-xs text-gray-500">
+                            Dağıtım: {s.distributionPattern}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -357,22 +406,100 @@ const WizardStepSubjects: React.FC<WizardStepSubjectsProps> = ({ data, onUpdate 
             <Input label="Ders Adı" value={formData.name} onChange={v => setFormData({...formData, name: v})} required />
             <Input label="Branş" value={formData.branch} onChange={v => setFormData({...formData, branch: v})} required />
           </div>
-          <Input label="Haftalık Ders Saati" type="number" value={formData.weeklyHours} onChange={v => setFormData({...formData, weeklyHours: v})} required />
+          
+          <Input 
+            label="Haftalık Ders Saati" 
+            type="number" 
+            value={formData.weeklyHours} 
+            onChange={v => setFormData({...formData, weeklyHours: v, distributionPattern: ''})} 
+            required 
+          />
+          
+          {/* YENİ: Dağıtım Şekli Alanı */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-800 mb-2">
+                Dağıtım Şekli <span className="text-gray-500">(İsteğe bağlı)</span>
+              </label>
+              <Input 
+                value={formData.distributionPattern} 
+                onChange={v => setFormData({...formData, distributionPattern: v})}
+                placeholder="Örn: 2+2+2+2+2+2"
+              />
+              
+              {/* Validasyon Mesajı */}
+              {formData.distributionPattern && !isValidPattern && (
+                <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-sm text-red-700 font-medium">
+                    ⚠️ Dağıtım şeklindeki saatlerin toplamı ({parsedPattern.reduce((a, b) => a + b, 0)}) haftalık saat ({weeklyHours}) ile eşleşmiyor.
+                  </p>
+                </div>
+              )}
+              
+              {/* Başarılı Validasyon */}
+              {formData.distributionPattern && isValidPattern && parsedPattern.length > 0 && (
+                <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-700 font-medium">
+                    ✅ {parsedPattern.length} günde dağıtım: {parsedPattern.map((h, i) => `${i + 1}. gün ${h} saat`).join(', ')}
+                  </p>
+                </div>
+              )}
+              
+              <p className="text-xs text-gray-500 mt-1">
+                Dersin hafta boyunca nasıl dağıtılacağını belirtin. Örn: "2+2+2" = 3 günde 2'şer saat
+              </p>
+            </div>
+            
+            {/* Öneriler */}
+            {suggestions.length > 0 && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center mb-3">
+                  <Lightbulb className="w-5 h-5 text-blue-600 mr-2" />
+                  <h4 className="font-medium text-blue-800">{weeklyHours} Saatlik Ders İçin Öneriler</h4>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {suggestions.map((suggestion, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => applySuggestion(suggestion)}
+                      className={`px-3 py-2 text-sm rounded-lg border transition-all duration-200 ${
+                        formData.distributionPattern === suggestion
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-blue-700 border-blue-300 hover:bg-blue-100'
+                      }`}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-blue-600 mt-2">
+                  Önerilen dağıtım şekillerinden birini seçebilir veya kendiniz yazabilirsiniz.
+                </p>
+              </div>
+            )}
+          </div>
+          
           <div className="mb-4">
             <label className="block text-sm font-semibold text-gray-800 mb-2">Eğitim Seviyeleri<span className="text-red-500">*</span></label>
             <div className="flex flex-wrap gap-3">
               {EDUCATION_LEVELS.map(level => (
                 <label key={level} className={`flex items-center p-3 border-2 rounded-lg cursor-pointer ${formData.levels.includes(level) ? 'bg-indigo-50 border-indigo-500' : 'bg-white border-gray-300'}`}>
                   <input type="checkbox" checked={formData.levels.includes(level)} onChange={() => handleLevelToggle(level)} className="sr-only" />
-                  <span className="text-sm">{level}</span>
-                  {formData.levels.includes(level) && <span className="ml-2">✓</span>}
+                  <span className="text-sm font-medium">{level}</span>
+                  {formData.levels.includes(level) && <span className="ml-2 text-indigo-600">✓</span>}
                 </label>
               ))}
             </div>
           </div>
+          
           <div className="flex justify-end space-x-3 pt-4">
             <Button type="button" onClick={resetForm} variant="secondary">İptal</Button>
-            <Button type="submit" variant="primary" disabled={formData.levels.length === 0}>
+            <Button 
+              type="submit" 
+              variant="primary" 
+              disabled={formData.levels.length === 0 || (formData.distributionPattern && !isValidPattern)}
+            >
               {editingSubject ? 'Güncelle' : 'Kaydet'}
             </Button>
           </div>
